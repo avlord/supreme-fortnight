@@ -90,12 +90,13 @@ def main(_):
                     **FLAGS.config)
 
     visualizer = DebugPlotGenerator(FLAGS.env_name, gc_dataset)
-
+    # rng = jax.random.PRNGKey(FLAGS.seed)
     for i in tqdm.tqdm(range(1, FLAGS.max_steps + 1),
                        smoothing=0.1,
                        dynamic_ncols=True):
         batch = gc_dataset.sample(FLAGS.batch_size)  
         agent, update_info = agent.update(batch)
+        # rng = jax.random.split(rng, 1)[0]
 
         if i % FLAGS.log_interval == 0:
             debug_statistics = get_debug_statistics(agent, batch)

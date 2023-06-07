@@ -30,19 +30,20 @@ def icvf_loss(value_fn, target_value_fn, batch, config):
     # 1(s == s_+) + V(s', s_+, z) - V(s, s_+, z)
     ###
 
-    (next_v1_gz, next_v2_gz) = target_value_fn(batch['next_observations'], batch['goals'], batch['desired_goals'])
+    (next_v1_gz, elbo_1_0), (next_v2_gz, elbo_2_0) = target_value_fn(batch['next_observations'], batch['goals'], batch['desired_goals'])
+
     q1_gz = batch['rewards'] + config['discount'] * batch['masks'] * next_v1_gz
     q2_gz = batch['rewards'] + config['discount'] * batch['masks'] * next_v2_gz
     q1_gz, q2_gz = jax.lax.stop_gradient(q1_gz), jax.lax.stop_gradient(q2_gz)
 
-    (v1_gz, v2_gz) = value_fn(batch['observations'], batch['goals'], batch['desired_goals'])
+    (v1_gz, elbo_1_1), (v2_gz,elbo_2_2) = value_fn(batch['observations'], batch['goals'], batch['desired_goals'])
 
     ###
     # Compute the advantage of s -> s' under z
     # r(s, z) + V(s', z, z) - V(s, z, z)
     ###
 
-    (next_v1_zz, next_v2_zz) = target_value_fn(batch['next_observations'], batch['desired_goals'], batch['desired_goals'])
+    (next_v1_zz,elbo_3_0), (next_v2_zz,elbo_4_0) = target_value_fn(batch['next_observations'], batch['desired_goals'], batch['desired_goals'])
     if config['min_q']:
         next_v_zz = jnp.minimum(next_v1_zz, next_v2_zz)
     else:
@@ -50,7 +51,7 @@ def icvf_loss(value_fn, target_value_fn, batch, config):
     
     q_zz = batch['desired_rewards'] + config['discount'] * batch['desired_masks'] * next_v_zz
 
-    (v1_zz, v2_zz) = target_value_fn(batch['observations'], batch['desired_goals'], batch['desired_goals'])
+    (v1_zz,elbo_5_0), (v2_zz,elbo_6_0) = target_value_fn(batch['observations'], batch['desired_goals'], batch['desired_goals'])
     v_zz = (v1_zz + v2_zz) / 2
     adv = q_zz - v_zz
 
@@ -65,7 +66,7 @@ def icvf_loss(value_fn, target_value_fn, batch, config):
     ##
     value_loss1 = expectile_loss(adv, q1_gz-v1_gz, config['expectile']).mean()
     value_loss2 = expectile_loss(adv, q2_gz-v2_gz, config['expectile']).mean()
-    value_loss = value_loss1 + value_loss2
+    value_loss = value_loss1 + value_loss2 - elbo_1_1.mean() - elbo_2_2.mean() - elbo_3_0.mean() - elbo_4_0.mean() - elbo_5_0.mean() - elbo_6_0.mean()
 
     def masked_mean(x, mask):
         return (x * mask).sum() / (1e-5 + mask.sum())
@@ -106,9 +107,9 @@ class ICVFAgent(flax.struct.PyTreeNode):
     config: dict = nonpytree_field()
         
     @jax.jit
-    def update(agent, batch):
-        def value_loss_fn(value_params):
-            value_fn = lambda s, g, z: agent.value(s, g, z, params=value_params)
+    def update(agent, batch,):
+        def value_loss_fn(value_params,):
+            value_fn = lambda s, g, z: agent.value(s, g, z, params=value_params,)
             target_value_fn = lambda s, g, z: agent.target_value(s, g, z)
 
             return icvf_loss(value_fn, target_value_fn, batch, agent.config)

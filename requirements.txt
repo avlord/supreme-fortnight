@@ -1,4 +1,4 @@
-"jax[tpu]==0.3.25" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
+# "jax[tpu]==0.3.25" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
 numpy
 flax==0.6.2
 distrax
@@ -7,7 +7,7 @@ ml_collections
 tqdm
 wandb
 gym[atari]==0.24.0
-x-magical
+# x-magical
 imageio
 moviepy
 autorom[accept-rom-license]
