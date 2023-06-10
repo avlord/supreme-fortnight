@@ -4,6 +4,9 @@ from jaxrl_m.networks import MLP, get_latent, default_init, ensemblize
 import flax.linen as nn
 import jax.numpy as jnp
 from jax import jit, grad, lax, random
+import jax
+
+root_key = jax.random.PRNGKey(seed=0)
 
 
 class LayerNormMLP(nn.Module):
@@ -20,6 +23,24 @@ class LayerNormMLP(nn.Module):
                 x = self.activations(x)
                 x = nn.LayerNorm()(x)
         return x
+
+class AutoEncoder(nn.Module):
+    hidden_dims: Sequence[int]
+    activations: Callable[[jnp.ndarray], jnp.ndarray] = nn.gelu
+    activate_final: bool = False
+    kernel_init: Callable[[PRNGKey, Shape, Dtype], Array] = default_init()
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+     
+       
+        for i, size in enumerate(self.hidden_dims):
+            x = nn.Dense(size, kernel_init=self.kernel_init)(x)
+            if i + 1 < len(self.hidden_dims) or self.activate_final:                
+                x = self.activations(x)
+                x = nn.LayerNorm()(x)
+        return x
+
 
 
 class ICVFWithEncoder(nn.Module):
@@ -120,8 +141,8 @@ class MultilinearVF(nn.Module):
         self.psi_net = network_cls(self.hidden_dims, activate_final=True, name='psi')
 
 
-        self.encoder = network_cls((256,2), activate_final=True, name='encoder')
-        self.decoder = network_cls((256,29), activate_final=True, name='decoder') ###HERE IT SHOULD BE ORIGINAL intention space
+        self.encoder = AutoEncoder((256,256), activate_final=True, name='encoder')
+        self.decoder = AutoEncoder((12,29), activate_final=True, name='decoder') ###HERE IT SHOULD BE ORIGINAL intention space
 
         self.T_net =  network_cls(self.hidden_dims, activate_final=True, name='T')
 
@@ -141,13 +162,24 @@ class MultilinearVF(nn.Module):
     def get_phi(self, observations):
         return self.phi_net(observations)
 
+
     def encode(self,z):
         output  = self.encoder(z)
-        return output[:,0], output[:,1]
+     
+        return output
     
     def decode(self,z):
         z = self.decoder(z)
         return z
+
+    # def encode(self,z):
+    #     output, prng  = self.encoder(z)
+     
+    #     return (output[:,0], output[:,1])
+    
+    # def decode(self,z):
+    #     z, prng = self.decoder(z)
+    #     return z, prng
 
     # def bernoulli_logpdf(self,logits, x):
     #     """Bernoulli log pdf of data x given logits."""
@@ -193,28 +225,38 @@ class MultilinearVF(nn.Module):
 
     def get_info(self, observations: jnp.ndarray, outcomes: jnp.ndarray, intents: jnp.ndarray) -> Dict[str, jnp.ndarray]:
         phi = self.phi_net(observations)
-        psi = self.psi_net(outcomes)
+        psi = self.encode(outcomes)
         
-        #VAE SMWHERE HERE#
-        # z = self.psi_net(intents)
-        # Tz = self.T_net(z)
-        
-        ####THE DIRTIEST HACK EVER#######
-        rng = random.PRNGKey((observations.reshape(-1)[0] * outcomes.reshape(-1)[0] * intents.reshape(-1)[0]\
-                                +observations.reshape(-1)[0] - outcomes.reshape(-1)[0] + intents.reshape(-1)[0]).astype(int)) 
-        ################################
-
-        mu_z, sigmasq_z = self.encode(intents)
-        mu_z = mu_z.reshape(-1,1)
-        sigmasq_z = sigmasq_z.reshape(-1,1)
-        gaussian_sample = mu_z + sigmasq_z * random.normal(rng, mu_z.shape)
-        gaussian_sample = gaussian_sample.reshape(-1,1)
-        z = self.decode(gaussian_sample).reshape(-1,29) #256, 29
-        ll = self.mean_squared_error(z , intents)
-        gaussian_kl =  self.kl_gaussian(mu_z, sigmasq_z)
-        elbo = ll - gaussian_kl
+        #Before#
+        z = self.encode(intents)
+        elbo = 0
         Tz = self.T_net(z)
+
+
+        # #AFTER
+        # mu_z, sigmasq_z = self.encode(intents)
+        # mu_z = mu_z.reshape(-1,1)
+        # sigmasq_z = sigmasq_z.reshape(-1,1)
+        # gaussian_sample = mu_z + sigmasq_z * random.normal(prng, mu_z.shape)
+        # gaussian_sample = gaussian_sample.reshape(-1,1)
+        # z,prng = self.decode(gaussian_sample)
+        # z = z.reshape(-1,29) #256, 29
+        # ll = self.mean_squared_error(z , intents)
+        # gaussian_kl =  self.kl_gaussian(mu_z, sigmasq_z)
+        # elbo = ll - gaussian_kl
+        # Tz = self.T_net(z)
+        # #################
+
+
+        #AFTER AE
+        # z = self.encode(intents)
+        z = self.decode(z)
+        # z = reconstructed.reshape(-1,29) #256, 29
+        ll = self.mean_squared_error(z , intents)
+        # elbo = ll
+        # Tz = self.T_net(reconstructed)
         #################
+
 
         # T(z) should be a dxd matrix, but having a network output d^2 parameters is inefficient
         # So we'll make a low-rank approximation to T(z) = (diag(Tz) * A * B * diag(Tz))

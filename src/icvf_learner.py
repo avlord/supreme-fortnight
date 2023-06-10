@@ -66,7 +66,7 @@ def icvf_loss(value_fn, target_value_fn, batch, config):
     ##
     value_loss1 = expectile_loss(adv, q1_gz-v1_gz, config['expectile']).mean()
     value_loss2 = expectile_loss(adv, q2_gz-v2_gz, config['expectile']).mean()
-    value_loss = value_loss1 + value_loss2 - elbo_1_1.mean() - elbo_2_2.mean() - elbo_3_0.mean() - elbo_4_0.mean() - elbo_5_0.mean() - elbo_6_0.mean()
+    value_loss = value_loss1 + value_loss2 #- elbo_1_1.mean() - elbo_2_2.mean() - elbo_3_0.mean() - elbo_4_0.mean() - elbo_5_0.mean() - elbo_6_0.mean()
 
     def masked_mean(x, mask):
         return (x * mask).sum() / (1e-5 + mask.sum())
