@@ -29,11 +29,11 @@ flags.DEFINE_string('env_name', 'antmaze-large-diverse-v2', 'Environment name.')
 flags.DEFINE_string('save_dir', f'experiment_output/', 'Logging dir.')
 
 flags.DEFINE_integer('seed', np.random.choice(1000000), 'Random seed.')
-flags.DEFINE_integer('log_interval', 1000, 'Metric logging interval.')
+flags.DEFINE_integer('log_interval', 5000, 'Metric logging interval.')
 flags.DEFINE_integer('eval_interval', 25000, 'Visualization interval.')
 flags.DEFINE_integer('save_interval', 100000, 'Save interval.')
 flags.DEFINE_integer('batch_size', 256, 'Mini batch size.')
-flags.DEFINE_integer('max_steps', int(1e6), 'Number of training steps.')
+flags.DEFINE_integer('max_steps', int(5e5), 'Number of training steps.')
 
 flags.DEFINE_enum('icvf_type', 'multilinear', list(icvfs), 'Which model to use.')
 flags.DEFINE_list('hidden_dims', [256, 256], 'Hidden sizes.')
@@ -101,6 +101,7 @@ def main(_):
             debug_statistics = get_debug_statistics(agent, batch)
             train_metrics = {f'training/{k}': v for k, v in update_info.items()}
             train_metrics.update({f'pretraining/debug/{k}': v for k, v in debug_statistics.items()})
+            print(train_metrics)
             wandb.log(train_metrics, step=i)
 
         if i % FLAGS.eval_interval == 0:
@@ -216,8 +217,8 @@ def get_values(agent, observations, intent):
     def get_v(observations, intent):
         intent = intent.reshape(1, -1)
         intent_tiled = jnp.tile(intent, (observations.shape[0], 1))
-        v1, v2 = agent.value(observations, intent_tiled, intent_tiled)
-        return (v1 + v2) / 2    
+        v1= agent.value(observations, intent_tiled, intent_tiled)['v']
+        return v1    
     return get_v(observations, intent)
 
 @jax.jit
@@ -226,8 +227,8 @@ def get_policy(agent, observations, intent):
         def get_v(observations, intent):
             intent = intent.reshape(1, -1)
             intent_tiled = jnp.tile(intent, (observations.shape[0], 1))
-            v1, v2 = agent.value(observations, intent_tiled, intent_tiled)
-            return (v1 + v2) / 2    
+            v1 = agent.value(observations, intent_tiled, intent_tiled)['v']
+            return v1
             
         return get_v(observations, intent).mean()
 
@@ -274,8 +275,8 @@ def get_debug_statistics(agent, batch):
 
 @jax.jit
 def get_gcvalue(agent, s, g, z):
-    v_sgz_1, v_sgz_2 = agent.value(s, g, z)
-    return (v_sgz_1 + v_sgz_2) / 2
+    v_sgz_= agent.value(s, g, z)['v']
+    return v_sgz_
 
 def get_v_zz(agent, goal, observations):
     goal = jnp.tile(goal, (observations.shape[0], 1))
@@ -289,7 +290,7 @@ def get_v_gz(agent, initial_state, target_goal, observations):
 @jax.jit
 def get_traj_v(agent, trajectory):
     def get_v(s, g):
-        return agent.value(s[None], g[None], g[None]).mean()
+        return agent.value(s[None], g[None], g[None])['v'].mean()
     observations = trajectory['observations']
     all_values = jax.vmap(jax.vmap(get_v, in_axes=(None, 0)), in_axes=(0, None))(observations, observations)
     return {

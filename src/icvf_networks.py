@@ -20,6 +20,23 @@ class LayerNormMLP(nn.Module):
         return x
 
 
+class AutoEncoder(nn.Module):
+    hidden_dims: Sequence[int]
+    activations: Callable[[jnp.ndarray], jnp.ndarray] = nn.gelu
+    activate_final: bool = False
+    kernel_init: Callable[[PRNGKey, Shape, Dtype], Array] = default_init()
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+     
+       
+        for i, size in enumerate(self.hidden_dims):
+            x = nn.Dense(size, kernel_init=self.kernel_init)(x)
+            if i + 1 < len(self.hidden_dims) or self.activate_final:                
+                x = self.activations(x)
+                x = nn.LayerNorm()(x)
+        return x
+
 class ICVFWithEncoder(nn.Module):
     encoder: nn.Module
     vf: nn.Module
@@ -43,7 +60,7 @@ class ICVFWithEncoder(nn.Module):
         latent_z = get_latent(self.encoder, intents)
         return self.vf.get_info(latent_s, latent_g, latent_z)
 
-def create_icvf(icvf_cls_or_name, encoder=None, ensemble=True, **kwargs):    
+def create_icvf(icvf_cls_or_name, encoder=None, ensemble=False, **kwargs):    
     if isinstance(icvf_cls_or_name, str):
         icvf_cls = icvfs[icvf_cls_or_name]
     else:
@@ -114,26 +131,71 @@ class MultilinearVF(nn.Module):
     def setup(self):
         network_cls = LayerNormMLP if self.use_layer_norm else MLP
         self.phi_net = network_cls(self.hidden_dims, activate_final=True, name='phi')
+
         self.psi_net = network_cls(self.hidden_dims, activate_final=True, name='psi')
 
+
         self.T_net =  network_cls(self.hidden_dims, activate_final=True, name='T')
+
+        self.encoder = AutoEncoder((256,256), activate_final=True, name='encoder')
+        self.decoder = AutoEncoder((12,29), activate_final=False, name='decoder') ###HERE IT SHOULD BE ORIGINAL intention space
+
 
         self.matrix_a = nn.Dense(self.hidden_dims[-1], name='matrix_a')
         self.matrix_b = nn.Dense(self.hidden_dims[-1], name='matrix_b')
         
     
+    # def __call__(self, observations: jnp.ndarray, outcomes: jnp.ndarray, intents: jnp.ndarray) -> jnp.ndarray:
+    #     return self.get_info(observations, outcomes, intents)['v']
+    
     def __call__(self, observations: jnp.ndarray, outcomes: jnp.ndarray, intents: jnp.ndarray) -> jnp.ndarray:
-        return self.get_info(observations, outcomes, intents)['v']
-        
+        return self.get_info(observations, outcomes, intents)
+
+    def encode(self,z):
+        output  = self.encoder(z)
+     
+        return output
+    
+    def decode(self,z):
+        z = self.decoder(z)
+        return z
 
     def get_phi(self, observations):
         return self.phi_net(observations)
+
+    def mean_squared_error(self, x1: jnp.ndarray, x2: jnp.ndarray) -> jnp.ndarray:
+        """Calculate mean squared error between two tensors.
+
+        Args:
+                x1: variable tensor
+                x2: variable tensor, must be of same shape as x1
+
+        Returns:
+                A scalar representing mean square error for the two input tensors.
+        """
+        if x1.shape != x2.shape:
+            raise ValueError("x1 and x2 must be of the same shape")
+
+        x1 = jnp.reshape(x1, (x1.shape[0], -1))
+        x2 = jnp.reshape(x2, (x2.shape[0], -1))
+
+        return jnp.mean(jnp.square(x1 - x2), axis=-1)
 
     def get_info(self, observations: jnp.ndarray, outcomes: jnp.ndarray, intents: jnp.ndarray) -> Dict[str, jnp.ndarray]:
         phi = self.phi_net(observations)
         psi = self.psi_net(outcomes)
         z = self.psi_net(intents)
         Tz = self.T_net(z)
+        # psi = self.encode(outcomes)
+        # z = self.encode(intents)
+
+        # Tz = self.T_net(z)
+
+        # reconstructed_z = self.decode(z)
+
+        # ll = self.mean_squared_error(intents, reconstructed_z)
+
+
 
         # T(z) should be a dxd matrix, but having a network output d^2 parameters is inefficient
         # So we'll make a low-rank approximation to T(z) = (diag(Tz) * A * B * diag(Tz))
@@ -151,6 +213,7 @@ class MultilinearVF(nn.Module):
             'z': z,
             'phi_z': phi_z,
             'psi_z': psi_z,
+            'll': 0,
         }
 
 icvfs = {

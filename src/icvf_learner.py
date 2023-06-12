@@ -30,28 +30,32 @@ def icvf_loss(value_fn, target_value_fn, batch, config):
     # 1(s == s_+) + V(s', s_+, z) - V(s, s_+, z)
     ###
 
-    (next_v1_gz, next_v2_gz) = target_value_fn(batch['next_observations'], batch['goals'], batch['desired_goals'])
-    q1_gz = batch['rewards'] + config['discount'] * batch['masks'] * next_v1_gz
-    q2_gz = batch['rewards'] + config['discount'] * batch['masks'] * next_v2_gz
-    q1_gz, q2_gz = jax.lax.stop_gradient(q1_gz), jax.lax.stop_gradient(q2_gz)
+    next_v1_gz = target_value_fn(batch['next_observations'], batch['goals'], batch['desired_goals']) 
+    next_v1_gz = next_v1_gz['v']
 
-    (v1_gz, v2_gz) = value_fn(batch['observations'], batch['goals'], batch['desired_goals'])
+    q1_gz = batch['rewards'] + config['discount'] * batch['masks'] * next_v1_gz
+    q1_gz = jax.lax.stop_gradient(q1_gz)
+
+    v1_gz = value_fn(batch['observations'], batch['goals'], batch['desired_goals'])
+    v1_gz = v1_gz['v']
 
     ###
     # Compute the advantage of s -> s' under z
     # r(s, z) + V(s', z, z) - V(s, z, z)
     ###
 
-    (next_v1_zz, next_v2_zz) = target_value_fn(batch['next_observations'], batch['desired_goals'], batch['desired_goals'])
-    if config['min_q']:
-        next_v_zz = jnp.minimum(next_v1_zz, next_v2_zz)
-    else:
-        next_v_zz = (next_v1_zz + next_v2_zz) / 2
-    
-    q_zz = batch['desired_rewards'] + config['discount'] * batch['desired_masks'] * next_v_zz
+    next_v1_zz = target_value_fn(batch['next_observations'], batch['desired_goals'], batch['desired_goals'])
+    # ll_next_zz = next_v1_zz['ll']
+    next_v1_zz = next_v1_zz['v']
 
-    (v1_zz, v2_zz) = target_value_fn(batch['observations'], batch['desired_goals'], batch['desired_goals'])
-    v_zz = (v1_zz + v2_zz) / 2
+    
+    q_zz = batch['desired_rewards'] + config['discount'] * batch['desired_masks'] * next_v1_zz
+
+    v1_zz = target_value_fn(batch['observations'], batch['desired_goals'], batch['desired_goals'])
+    # ll_zz =  v1_zz['ll']
+    v1_zz = v1_zz['v']
+
+    v_zz = v1_zz
     adv = q_zz - v_zz
 
     if config['no_intent']:
@@ -63,9 +67,8 @@ def icvf_loss(value_fn, target_value_fn, batch, config):
     # the value loss. 
     #
     ##
-    value_loss1 = expectile_loss(adv, q1_gz-v1_gz, config['expectile']).mean()
-    value_loss2 = expectile_loss(adv, q2_gz-v2_gz, config['expectile']).mean()
-    value_loss = value_loss1 + value_loss2
+    value_loss = expectile_loss(adv, q1_gz-v1_gz, config['expectile']).mean()  #+ ll_zz.mean() + ll_next_zz.mean()
+
 
     def masked_mean(x, mask):
         return (x * mask).sum() / (1e-5 + mask.sum())
