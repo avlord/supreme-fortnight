@@ -24,7 +24,7 @@ from icecream import ic
 
 
 FLAGS = flags.FLAGS
-flags.DEFINE_string('env_name', 'antmaze-large-diverse-v2', 'Environment name.')
+flags.DEFINE_string('env_name', 'antmaze-umaze-v2', 'Environment name.')
 
 flags.DEFINE_string('save_dir', f'experiment_output/', 'Logging dir.')
 
@@ -33,7 +33,7 @@ flags.DEFINE_integer('log_interval', 5000, 'Metric logging interval.')
 flags.DEFINE_integer('eval_interval', 25000, 'Visualization interval.')
 flags.DEFINE_integer('save_interval', 100000, 'Save interval.')
 flags.DEFINE_integer('batch_size', 256, 'Mini batch size.')
-flags.DEFINE_integer('max_steps', int(5e5), 'Number of training steps.')
+flags.DEFINE_integer('max_steps', 150_000, 'Number of training steps.')
 
 flags.DEFINE_enum('icvf_type', 'multilinear', list(icvfs), 'Which model to use.')
 flags.DEFINE_list('hidden_dims', [256, 256], 'Hidden sizes.')

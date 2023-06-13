@@ -45,14 +45,14 @@ def icvf_loss(value_fn, target_value_fn, batch, config):
     ###
 
     next_v1_zz = target_value_fn(batch['next_observations'], batch['desired_goals'], batch['desired_goals'])
-    # ll_next_zz = next_v1_zz['ll']
+    ll_next_zz = next_v1_zz['ll']
     next_v1_zz = next_v1_zz['v']
 
     
     q_zz = batch['desired_rewards'] + config['discount'] * batch['desired_masks'] * next_v1_zz
 
     v1_zz = target_value_fn(batch['observations'], batch['desired_goals'], batch['desired_goals'])
-    # ll_zz =  v1_zz['ll']
+    ll_zz =  v1_zz['ll']
     v1_zz = v1_zz['v']
 
     v_zz = v1_zz
@@ -67,7 +67,7 @@ def icvf_loss(value_fn, target_value_fn, batch, config):
     # the value loss. 
     #
     ##
-    value_loss = expectile_loss(adv, q1_gz-v1_gz, config['expectile']).mean()  #+ ll_zz.mean() + ll_next_zz.mean()
+    value_loss = expectile_loss(adv, q1_gz-v1_gz, config['expectile']).mean()  + ll_zz.mean() + ll_next_zz.mean()
 
 
     def masked_mean(x, mask):

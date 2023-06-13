@@ -184,16 +184,16 @@ class MultilinearVF(nn.Module):
     def get_info(self, observations: jnp.ndarray, outcomes: jnp.ndarray, intents: jnp.ndarray) -> Dict[str, jnp.ndarray]:
         phi = self.phi_net(observations)
         psi = self.psi_net(outcomes)
-        z = self.psi_net(intents)
-        Tz = self.T_net(z)
-        # psi = self.encode(outcomes)
-        # z = self.encode(intents)
-
+        # z = self.psi_net(intents)
         # Tz = self.T_net(z)
+        psi = self.encode(outcomes)
+        z = self.encode(intents)
 
-        # reconstructed_z = self.decode(z)
+        Tz = self.T_net(z)
 
-        # ll = self.mean_squared_error(intents, reconstructed_z)
+        reconstructed_z = self.decode(z)
+
+        ll = self.mean_squared_error(intents, reconstructed_z)
 
 
 
@@ -213,7 +213,7 @@ class MultilinearVF(nn.Module):
             'z': z,
             'phi_z': phi_z,
             'psi_z': psi_z,
-            'll': 0,
+            'll': ll,
         }
 
 icvfs = {

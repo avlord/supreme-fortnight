@@ -17,15 +17,15 @@ import pickle
 
 
 FLAGS = flags.FLAGS
-flags.DEFINE_string('env_name', 'antmaze-large-diverse-v2', 'Environment name.')
+flags.DEFINE_string('env_name', 'antmaze-umaze-v0', 'Environment name.')
 
 flags.DEFINE_string('save_dir', None, 'Logging dir (if not None, save params).')
 
 flags.DEFINE_integer('seed', np.random.choice(1000000), 'Random seed.')
 flags.DEFINE_integer('eval_episodes', 10,
                      'Number of episodes used for evaluation.')
-flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
-flags.DEFINE_integer('eval_interval', 1000, 'Eval interval.')
+flags.DEFINE_integer('log_interval', 30000, 'Logging interval.')
+flags.DEFINE_integer('eval_interval', 40000, 'Eval interval.')
 flags.DEFINE_integer('save_interval', 25000, 'Eval interval.')
 flags.DEFINE_integer('batch_size', 256, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1e6), 'Number of training steps.')
