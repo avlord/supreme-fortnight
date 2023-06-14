@@ -3,7 +3,7 @@ from jaxrl_m.networks import MLP, get_latent, default_init, ensemblize
 
 import flax.linen as nn
 import jax.numpy as jnp
-
+import jax 
 class LayerNormMLP(nn.Module):
     hidden_dims: Sequence[int]
     activations: Callable[[jnp.ndarray], jnp.ndarray] = nn.gelu
@@ -36,6 +36,28 @@ class AutoEncoder(nn.Module):
                 x = self.activations(x)
                 x = nn.LayerNorm()(x)
         return x
+
+class EncoderVae(nn.Module):
+    hidden_dims: Sequence[int]
+    activations: Callable[[jnp.ndarray], jnp.ndarray] = nn.gelu
+    activate_final: bool = False
+    kernel_init: Callable[[PRNGKey, Shape, Dtype], Array] = default_init()
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+       
+        for i, size in enumerate(self.hidden_dims[:-1]):
+            x = nn.Dense(size, kernel_init=self.kernel_init)(x)
+            x = self.activations(x)
+            x = nn.LayerNorm()(x)
+        
+        size = self.hidden_dims[-1]
+        mean_x = nn.Dense(size, kernel_init=self.kernel_init)(x)
+        logvar_x = nn.Dense(size, kernel_init=self.kernel_init)(x)
+
+        return mean_x, logvar_x
+
+
 
 class ICVFWithEncoder(nn.Module):
     encoder: nn.Module
@@ -137,8 +159,9 @@ class MultilinearVF(nn.Module):
 
         self.T_net =  network_cls(self.hidden_dims, activate_final=True, name='T')
 
-        self.encoder = AutoEncoder((256,256), activate_final=True, name='encoder')
-        self.decoder = AutoEncoder((12,29), activate_final=False, name='decoder') ###HERE IT SHOULD BE ORIGINAL intention space
+        # self.encoder = AutoEncoder((256,20), activate_final=True, name='encoder')
+        self.encoder_vae = EncoderVae((256,20), activate_final=True, name='encoder')
+        self.decoder = AutoEncoder((256,58), activate_final=False, name='decoder') ###HERE IT SHOULD BE ORIGINAL intention space
 
 
         self.matrix_a = nn.Dense(self.hidden_dims[-1], name='matrix_a')
@@ -155,6 +178,19 @@ class MultilinearVF(nn.Module):
         output  = self.encoder(z)
      
         return output
+
+    def encode_vae(self,z,goal):
+        concat = jnp.concatenate([z, goal], axis=-1)
+        mu, logvar  = self.encoder_vae(concat)
+        z = self.reparameterize(mu, logvar)
+        
+        return z, mu, logvar
+    
+    def reparameterize(self, mu, logvar):
+        # eps = jax.random.normal(key=next(self.params), shape=mu.shape)
+        std = jnp.exp(0.5 * logvar)
+        eps = np.random.normal(size=mu.shape)
+        return mu + eps * std
     
     def decode(self,z):
         z = self.decoder(z)
@@ -181,21 +217,31 @@ class MultilinearVF(nn.Module):
 
         return jnp.mean(jnp.square(x1 - x2), axis=-1)
 
+    def kl_divergence(self,mean,logvar):
+        print('shapes kl',(1 + logvar - jnp.power(mean, 2) - jnp.exp(logvar)).shape)
+        return - 0.5 * jnp.sum(1 + logvar - jnp.power(mean, 2) - jnp.exp(logvar))
+
     def get_info(self, observations: jnp.ndarray, outcomes: jnp.ndarray, intents: jnp.ndarray) -> Dict[str, jnp.ndarray]:
         phi = self.phi_net(observations)
         psi = self.psi_net(outcomes)
         # z = self.psi_net(intents)
         # Tz = self.T_net(z)
-        psi = self.encode(outcomes)
-        z = self.encode(intents)
+        
+
+        # psi = self.encode(outcomes)
+        # z = self.encode(intents)
+        z, mu, logvar = self.encode_vae(intents,outcomes)
 
         Tz = self.T_net(z)
 
         reconstructed_z = self.decode(z)
 
-        ll = self.mean_squared_error(intents, reconstructed_z)
+        concat = jnp.concatenate([intents, outcomes], axis=-1)
 
+        ll = self.mean_squared_error(concat, reconstructed_z)
+        kl = self.kl_divergence(mu,logvar)
 
+        ll += 3*kl
 
         # T(z) should be a dxd matrix, but having a network output d^2 parameters is inefficient
         # So we'll make a low-rank approximation to T(z) = (diag(Tz) * A * B * diag(Tz))

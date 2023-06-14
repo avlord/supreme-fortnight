@@ -123,7 +123,7 @@ def create_learner(
 
 
         ### ADDING LAYERS FROM PRETRAINED VALUE FUNCTION ####
-        loaded_params = {'MLP_0':pickle.load(open('/home/dima/UCI/GraphModels/final_proj/icvf_release/examples/mujoco/models/params.pkl', 'rb'))['agent']['value']['params']['phi']}
+        loaded_params = {'MLP_0':pickle.load(open('/home/dima/UCI/GraphModels/final_proj/icvf_release/examples/mujoco/models/params_vae_3kl.pkl', 'rb'))['agent']['value']['params']['phi']}
         
         ### WE HAVE ONLY 2 LAYERS PRETRAINED ###
         loaded_params['MLP_0']['layers_2'] = value_params['MLP_0']['layers_2']
